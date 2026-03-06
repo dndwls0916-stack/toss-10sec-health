@@ -515,16 +515,41 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   );
 }
 
+// ─── 날짜 키 (매일 자정 자동 초기화) ─────────────────────────────────────────
+function getTodayKey() {
+  const d = new Date();
+  return `hq_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [points, setPoints] = useState(0);
-  const [completedIds, setCompletedIds] = useState([]);
+  // LocalStorage에서 초기값 불러오기
+  const [points, setPoints] = useState(() => {
+    try { return parseInt(localStorage.getItem("hq_points") ?? "0", 10); }
+    catch { return 0; }
+  });
+  const [completedIds, setCompletedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(getTodayKey());
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [selectedQuest, setSelectedQuest] = useState(null);
 
   // 보상 시스템 상태
   const [showConfetti, setShowConfetti] = useState(false);
-  const [pointToast, setPointToast] = useState(null); // { points }
-  const [levelUp, setLevelUp] = useState(null); // { level }
+  const [pointToast, setPointToast] = useState(null);
+  const [levelUp, setLevelUp] = useState(null);
+
+  // 포인트 변경 시 저장
+  useEffect(() => {
+    try { localStorage.setItem("hq_points", points); } catch {}
+  }, [points]);
+
+  // 완료 미션 변경 시 저장 (날짜 키 → 매일 자동 초기화)
+  useEffect(() => {
+    try { localStorage.setItem(getTodayKey(), JSON.stringify(completedIds)); } catch {}
+  }, [completedIds]);
 
   const handleComplete = (quest) => {
     if (completedIds.includes(quest.id)) return;
