@@ -59,7 +59,7 @@ function useTimer(duration) {
 }
 
 // ─── useSensor 훅 ─────────────────────────────────────────────────────────────
-function useSensor({ goal = 10, threshold = 2.5, cooldown = 500 }) {
+function useSensor({ goal = 10, threshold = 1.5, cooldown = 600 }) {
   const [permission, setPermission] = useState("idle"); // idle | requesting | granted | denied
   const [count, setCount] = useState(0);
   const [done, setDone] = useState(false);
@@ -92,16 +92,20 @@ function useSensor({ goal = 10, threshold = 2.5, cooldown = 500 }) {
       const accel = e.accelerationIncludingGravity;
       if (!accel) return;
 
-      // Y축과 Z축 중 최대 절댓값 사용
-      const val = Math.max(Math.abs(accel.y ?? 0), Math.abs(accel.z ?? 0));
+      // X/Y/Z 세 축 모두 사용 — 폰 방향 무관하게 감지
+      const val = Math.max(
+        Math.abs(accel.x ?? 0),
+        Math.abs(accel.y ?? 0),
+        Math.abs(accel.z ?? 0)
+      );
       const now = Date.now();
 
-      // 피크(상승) 감지
-      if (val > threshold && !peakRef.current) {
+      // 피크(상승) 감지 — 중력(약 9.8) 기준으로 변화량 체크
+      if (val > 10 + threshold && !peakRef.current) {
         peakRef.current = true;
       }
       // 복귀(하강) 감지 → 1회 카운트
-      if (val < threshold * 0.5 && peakRef.current) {
+      if (val < 10 + threshold * 0.3 && peakRef.current) {
         peakRef.current = false;
         if (now - lastTriggerRef.current > cooldown) {
           lastTriggerRef.current = now;
