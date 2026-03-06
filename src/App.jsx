@@ -35,15 +35,106 @@ function getLevel(pts) {
   return lv;
 }
 
+// ─── 폭죽 파티클 컴포넌트 ────────────────────────────────────────────────────
+const CONFETTI_COLORS = ["#2563EB","#F59E0B","#10B981","#EF4444","#8B5CF6","#EC4899","#06B6D4"];
+
+function ConfettiParticle({ x, color, delay }) {
+  return (
+    <motion.div
+      className="fixed pointer-events-none z-[100]"
+      style={{ left: `${x}%`, top: "-10px", width: 8, height: 8, borderRadius: 2, backgroundColor: color }}
+      initial={{ y: 0, opacity: 1, rotate: 0, scale: 1 }}
+      animate={{ y: typeof window !== "undefined" ? window.innerHeight + 50 : 800, opacity: [1, 1, 0], rotate: 720, scale: [1, 1.2, 0.8] }}
+      transition={{ duration: 2.2 + Math.random() * 0.8, delay, ease: "easeIn" }}
+    />
+  );
+}
+
+function Confetti({ show }) {
+  const particles = useRef(
+    Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: Math.random() * 0.6,
+    }))
+  );
+  if (!show) return null;
+  return (
+    <>
+      {particles.current.map((p) => (
+        <ConfettiParticle key={p.id} x={p.x} color={p.color} delay={p.delay} />
+      ))}
+    </>
+  );
+}
+
+// ─── 레벨업 오버레이 ──────────────────────────────────────────────────────────
+function LevelUpOverlay({ level, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2500);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[90] flex flex-col items-center justify-center pointer-events-none"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <motion.div
+        className="bg-white rounded-3xl px-10 py-8 shadow-2xl flex flex-col items-center gap-3"
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      >
+        <motion.span
+          className="text-6xl"
+          animate={{ rotate: [0, -15, 15, -10, 10, 0], scale: [1, 1.3, 1] }}
+          transition={{ duration: 0.8 }}
+        >
+          {level.emoji}
+        </motion.span>
+        <p className="text-xs font-bold text-blue-500 uppercase tracking-widest">레벨 업!</p>
+        <p className="text-2xl font-black text-gray-900">{level.label}</p>
+        <p className="text-sm text-gray-400">달성을 축하해요 🎉</p>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── 포인트 획득 토스트 ───────────────────────────────────────────────────────
+function PointToast({ points, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1800);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <motion.div
+      className="fixed top-20 left-1/2 -translate-x-1/2 z-[95] pointer-events-none"
+      initial={{ opacity: 0, y: -20, scale: 0.8 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -30, scale: 0.9 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+    >
+      <div className="bg-blue-600 text-white font-black text-xl px-6 py-3 rounded-2xl shadow-lg">
+        +{points}P 🎉
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── useTimer 훅 ──────────────────────────────────────────────────────────────
 function useTimer(duration) {
   const [timeLeft, setTimeLeft] = useState(duration);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const intervalRef = useRef(null);
-
   const start = () => { if (running || done) return; setRunning(true); };
-
   useEffect(() => {
     if (!running) return;
     intervalRef.current = setInterval(() => {
@@ -54,57 +145,40 @@ function useTimer(duration) {
     }, 1000);
     return () => clearInterval(intervalRef.current);
   }, [running]);
-
   return { timeLeft, running, done, start };
 }
 
 // ─── useSensor 훅 ─────────────────────────────────────────────────────────────
 function useSensor({ goal = 10, threshold = 1.5, cooldown = 600 }) {
-  const [permission, setPermission] = useState("idle"); // idle | requesting | granted | denied
+  const [permission, setPermission] = useState("idle");
   const [count, setCount] = useState(0);
   const [done, setDone] = useState(false);
-  const [bump, setBump] = useState(0); // 애니메이션 트리거용
+  const [bump, setBump] = useState(0);
   const lastTriggerRef = useRef(0);
-  const peakRef = useRef(false); // 피크 감지 상태
+  const peakRef = useRef(false);
 
-  // 권한 요청
   const requestPermission = useCallback(async () => {
     setPermission("requesting");
     try {
       if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
-        // iOS 13+
-        const result = await DeviceMotionEvent.requestPermission();
+        let result = "denied";
+        try { result = await DeviceMotionEvent.requestPermission(); }
+        catch { result = "granted"; }
         setPermission(result === "granted" ? "granted" : "denied");
       } else {
-        // Android / 데스크톱 (권한 팝업 없이 바로 허용)
         setPermission("granted");
       }
-    } catch (e) {
-      setPermission("denied");
-    }
+    } catch { setPermission("denied"); }
   }, []);
 
-  // 모션 감지
   useEffect(() => {
     if (permission !== "granted" || done) return;
-
     const handleMotion = (e) => {
       const accel = e.accelerationIncludingGravity;
       if (!accel) return;
-
-      // X/Y/Z 세 축 모두 사용 — 폰 방향 무관하게 감지
-      const val = Math.max(
-        Math.abs(accel.x ?? 0),
-        Math.abs(accel.y ?? 0),
-        Math.abs(accel.z ?? 0)
-      );
+      const val = Math.max(Math.abs(accel.x ?? 0), Math.abs(accel.y ?? 0), Math.abs(accel.z ?? 0));
       const now = Date.now();
-
-      // 피크(상승) 감지 — 중력(약 9.8) 기준으로 변화량 체크
-      if (val > 10 + threshold && !peakRef.current) {
-        peakRef.current = true;
-      }
-      // 복귀(하강) 감지 → 1회 카운트
+      if (val > 10 + threshold && !peakRef.current) peakRef.current = true;
       if (val < 10 + threshold * 0.3 && peakRef.current) {
         peakRef.current = false;
         if (now - lastTriggerRef.current > cooldown) {
@@ -119,7 +193,6 @@ function useSensor({ goal = 10, threshold = 1.5, cooldown = 600 }) {
         }
       }
     };
-
     window.addEventListener("devicemotion", handleMotion);
     return () => window.removeEventListener("devicemotion", handleMotion);
   }, [permission, done, goal, threshold, cooldown]);
@@ -235,29 +308,24 @@ function TimerView({ quest, onComplete }) {
   const { timeLeft, running, done, start } = useTimer(quest.duration);
   const hints = TIMER_HINTS[quest.id] || DEFAULT_HINTS;
   const [hintIdx, setHintIdx] = useState(0);
-
   useEffect(() => {
     if (!running) return;
     const id = setInterval(() => setHintIdx((prev) => (prev + 1) % hints.length), 2500);
     return () => clearInterval(id);
   }, [running, hints.length]);
-
   const progress = (quest.duration - timeLeft) / quest.duration;
-
   return (
     <div className="flex flex-col items-center py-2">
       <CircleProgress progress={progress}>
         <div className="flex flex-col items-center gap-1">
           <motion.span className="text-5xl select-none"
             animate={running ? { scale: [1, 1.18, 1] } : { scale: 1 }}
-            transition={running ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" } : {}}
-          >
+            transition={running ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" } : {}}>
             {done ? "✅" : quest.emoji}
           </motion.span>
           {!done && <span className="text-3xl font-bold text-gray-900 tabular-nums leading-none">{timeLeft}</span>}
         </div>
       </CircleProgress>
-
       <div className="mt-5 mb-5 h-6 flex items-center justify-center w-full">
         <AnimatePresence mode="wait">
           {running && (
@@ -265,18 +333,13 @@ function TimerView({ quest, onComplete }) {
               className="text-sm text-gray-500 text-center">{hints[hintIdx]}</motion.p>
           )}
           {!running && !done && (
-            <motion.p key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-gray-400 text-center">
-              버튼을 눌러 10초 타이머를 시작하세요
-            </motion.p>
+            <motion.p key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-gray-400 text-center">버튼을 눌러 10초 타이머를 시작하세요</motion.p>
           )}
           {done && (
-            <motion.p key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-base font-bold text-blue-600 text-center">
-              🎉 완료! 수고했어요!
-            </motion.p>
+            <motion.p key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-base font-bold text-blue-600 text-center">🎉 완료! 수고했어요!</motion.p>
           )}
         </AnimatePresence>
       </div>
-
       <AnimatePresence mode="wait">
         {done ? (
           <motion.button key="claim" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
@@ -296,35 +359,25 @@ function TimerView({ quest, onComplete }) {
   );
 }
 
-// ─── SensorView (까치발 펌핑 전용) ───────────────────────────────────────────
+// ─── SensorView ───────────────────────────────────────────────────────────────
 function SensorView({ quest, onComplete }) {
   const goal = quest.goal ?? 10;
   const { permission, count, done, bump, requestPermission } = useSensor({ goal });
   const progress = count / goal;
-
-  // 도넛 안의 숫자 bump 애니메이션 key
   const bumpKey = bump;
-
   return (
     <div className="flex flex-col items-center py-2">
-
-      {/* ── 권한 미허용 상태 ── */}
       {permission === "idle" && (
         <div className="w-full flex flex-col items-center gap-5 py-4">
           <div className="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center text-4xl">🦶</div>
           <div className="bg-gray-50 rounded-2xl p-4 w-full">
-            <p className="text-sm text-gray-600 leading-relaxed text-center">
-              까치발 감지를 위해<br />스마트폰 모션 센서 접근이 필요해요.
-            </p>
+            <p className="text-sm text-gray-600 leading-relaxed text-center">까치발 감지를 위해<br />스마트폰 모션 센서 접근이 필요해요.</p>
           </div>
-          <button onClick={requestPermission}
-            className="w-full bg-blue-600 text-white font-bold text-base py-4 rounded-2xl active:bg-blue-700 transition-colors">
+          <button onClick={requestPermission} className="w-full bg-blue-600 text-white font-bold text-base py-4 rounded-2xl active:bg-blue-700 transition-colors">
             📡 센서 권한 허용하기
           </button>
         </div>
       )}
-
-      {/* ── 권한 요청 중 ── */}
       {permission === "requesting" && (
         <div className="w-full flex flex-col items-center gap-4 py-8">
           <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -332,76 +385,50 @@ function SensorView({ quest, onComplete }) {
           <p className="text-sm text-gray-500">권한 요청 중...</p>
         </div>
       )}
-
-      {/* ── 권한 거부 ── */}
       {permission === "denied" && (
         <div className="w-full flex flex-col items-center gap-4 py-6">
           <div className="text-4xl">😢</div>
           <p className="text-sm text-gray-500 text-center">센서 권한이 거부됐어요.<br />기기 설정에서 허용 후 다시 시도해 주세요.</p>
-          <button onClick={requestPermission}
-            className="w-full bg-gray-100 text-gray-600 font-bold text-base py-4 rounded-2xl">
-            다시 시도하기
-          </button>
+          <button onClick={requestPermission} className="w-full bg-gray-100 text-gray-600 font-bold text-base py-4 rounded-2xl">다시 시도하기</button>
         </div>
       )}
-
-      {/* ── 센서 활성 상태: 카운팅 UI ── */}
       {permission === "granted" && (
         <>
           <CircleProgress progress={progress} size={180} strokeWidth={10}>
             <div className="flex flex-col items-center gap-0.5">
-              {/* 까치발 이모지 pulse */}
               <motion.span className="text-4xl select-none"
                 animate={!done ? { scale: [1, 1.15, 1] } : { scale: 1 }}
                 transition={!done ? { duration: 0.8, repeat: Infinity, ease: "easeInOut" } : {}}>
                 {done ? "✅" : "🦶"}
               </motion.span>
-              {/* 카운트 숫자 — bump 시 튀어오름 */}
               <AnimatePresence mode="wait">
-                <motion.span
-                  key={bumpKey}
-                  initial={{ scale: 1.6, color: "#2563EB" }}
-                  animate={{ scale: 1, color: "#111827" }}
+                <motion.span key={bumpKey} initial={{ scale: 1.6, color: "#2563EB" }} animate={{ scale: 1, color: "#111827" }}
                   transition={{ type: "spring", stiffness: 400, damping: 18 }}
-                  className="text-4xl font-black tabular-nums leading-none"
-                >
-                  {count}
-                </motion.span>
+                  className="text-4xl font-black tabular-nums leading-none">{count}</motion.span>
               </AnimatePresence>
               <span className="text-xs text-gray-400 font-medium">/ {goal}회</span>
             </div>
           </CircleProgress>
-
-          {/* 안내 문구 */}
           <div className="mt-5 mb-5 h-6 flex items-center justify-center w-full">
             <AnimatePresence mode="wait">
               {!done ? (
-                <motion.p key="guide" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="text-sm text-gray-500 text-center">
+                <motion.p key="guide" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-gray-500 text-center">
                   {count === 0 ? "발뒤꿈치를 들었다 내렸다! 반복하세요 🦵" : `잘하고 있어요! ${goal - count}번만 더!`}
                 </motion.p>
               ) : (
-                <motion.p key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                  className="text-base font-bold text-blue-600 text-center">
+                <motion.p key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-base font-bold text-blue-600 text-center">
                   🎉 {goal}회 달성! 종아리 칭찬해!
                 </motion.p>
               )}
             </AnimatePresence>
           </div>
-
-          {/* 카운트 도트 시각화 */}
           <div className="flex gap-1.5 flex-wrap justify-center mb-6">
             {Array.from({ length: goal }).map((_, i) => (
-              <motion.div key={i}
-                initial={{ scale: 0.8 }}
+              <motion.div key={i} initial={{ scale: 0.8 }}
                 animate={{ scale: i < count ? 1 : 0.8, backgroundColor: i < count ? "#2563EB" : "#E5E7EB" }}
-                transition={{ type: "spring", stiffness: 300 }}
-                className="w-5 h-5 rounded-full"
-              />
+                transition={{ type: "spring", stiffness: 300 }} className="w-5 h-5 rounded-full" />
             ))}
           </div>
-
-          {/* 버튼 */}
           <AnimatePresence mode="wait">
             {done ? (
               <motion.button key="claim" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
@@ -425,17 +452,12 @@ function SensorView({ quest, onComplete }) {
 // ─── QuestModal ───────────────────────────────────────────────────────────────
 function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   const [visible, setVisible] = useState(false);
-  const [phase, setPhase] = useState("info"); // "info" | "timer" | "sensor"
-
+  const [phase, setPhase] = useState("info");
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
-
   const handleClose = () => { setVisible(false); setTimeout(onClose, 300); };
   const handleComplete = () => { onComplete(quest); handleClose(); };
-
   if (!quest) return null;
-
   const startPhase = quest.type === "timer" ? "timer" : "sensor";
-
   return (
     <>
       <div className="fixed inset-0 bg-black z-40 transition-opacity duration-300"
@@ -446,7 +468,6 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
           <div className="w-10 h-1 bg-gray-200 rounded-full" />
         </div>
         <div className="px-6 pt-3 pb-10">
-          {/* 퀘스트 헤더 */}
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl">{quest.emoji}</div>
             <div>
@@ -457,9 +478,7 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
               <p className="text-xs text-gray-500 mt-0.5">{quest.desc}</p>
             </div>
           </div>
-
           <AnimatePresence mode="wait">
-            {/* ── info 페이즈 ── */}
             {phase === "info" && (
               <motion.div key="info" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
                 <div className="bg-gray-50 rounded-2xl p-4 mb-4">
@@ -479,15 +498,11 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
                 )}
               </motion.div>
             )}
-
-            {/* ── timer 페이즈 ── */}
             {phase === "timer" && (
               <motion.div key="timer" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
                 <TimerView quest={quest} onComplete={handleComplete} />
               </motion.div>
             )}
-
-            {/* ── sensor 페이즈 ── */}
             {phase === "sensor" && (
               <motion.div key="sensor" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
                 <SensorView quest={quest} onComplete={handleComplete} />
@@ -506,10 +521,30 @@ export default function App() {
   const [completedIds, setCompletedIds] = useState([]);
   const [selectedQuest, setSelectedQuest] = useState(null);
 
+  // 보상 시스템 상태
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [pointToast, setPointToast] = useState(null); // { points }
+  const [levelUp, setLevelUp] = useState(null); // { level }
+
   const handleComplete = (quest) => {
     if (completedIds.includes(quest.id)) return;
+
+    const prevLevel = getLevel(points);
+    const newPoints = points + quest.points;
+    const newLevel = getLevel(newPoints);
+
     setCompletedIds((prev) => [...prev, quest.id]);
-    setPoints((prev) => prev + quest.points);
+    setPoints(newPoints);
+
+    // 폭죽 + 포인트 토스트
+    setShowConfetti(true);
+    setPointToast({ points: quest.points });
+    setTimeout(() => setShowConfetti(false), 2500);
+
+    // 레벨업 감지
+    if (newLevel.min !== prevLevel.min) {
+      setTimeout(() => setLevelUp({ level: newLevel }), 600);
+    }
   };
 
   return (
@@ -517,6 +552,7 @@ export default function App() {
       <Header points={points} completed={completedIds.length} />
       <QuestList completedIds={completedIds} onSelect={(q) => setSelectedQuest(q)} />
       <div className="h-20" />
+
       {selectedQuest && (
         <QuestModal
           quest={selectedQuest}
@@ -525,6 +561,23 @@ export default function App() {
           onComplete={handleComplete}
         />
       )}
+
+      {/* 폭죽 */}
+      <Confetti show={showConfetti} />
+
+      {/* 포인트 토스트 */}
+      <AnimatePresence>
+        {pointToast && (
+          <PointToast key={pointToast.points + Date.now()} points={pointToast.points} onDone={() => setPointToast(null)} />
+        )}
+      </AnimatePresence>
+
+      {/* 레벨업 오버레이 */}
+      <AnimatePresence>
+        {levelUp && (
+          <LevelUpOverlay key="levelup" level={levelUp.level} onDone={() => setLevelUp(null)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
