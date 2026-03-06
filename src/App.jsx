@@ -220,7 +220,7 @@ function CircleProgress({ progress, size = 180, strokeWidth = 10, children }) {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({ points, completed }) {
+function Header({ points, completed, streak }) {
   const lv = getLevel(points);
   const nextLv = LEVELS.find((l) => l.min > points);
   const curMin = getLevel(points).min;
@@ -249,10 +249,20 @@ function Header({ points, completed }) {
           <div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${Math.min(progress, 100)}%` }} />
         </div>
       </div>
-      <div className="flex items-center gap-1.5 mt-3">
+      <div className="flex items-center gap-1.5 mt-3 flex-wrap">
         <div className="bg-blue-50 text-blue-600 text-xs font-semibold px-2.5 py-1 rounded-full">
           오늘 {completed}/{QUESTS.length} 완료
         </div>
+        {streak > 0 && (
+          <motion.div
+            className="bg-orange-50 text-orange-500 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300 }}
+          >
+            🔥 {streak}일째 건강 중
+          </motion.div>
+        )}
         {completed === QUESTS.length && (
           <div className="bg-yellow-50 text-yellow-600 text-xs font-semibold px-2.5 py-1 rounded-full animate-pulse">🎊 모두 완료!</div>
         )}
@@ -515,41 +525,81 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   );
 }
 
-// ─── 날짜 키 (매일 자정 자동 초기화) ─────────────────────────────────────────
-function getTodayKey() {
-  const d = new Date();
-  return `hq_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
+// ─── 날짜 문자열 헬퍼 ────────────────────────────────────────────────────────
+function getDateStr(date = new Date()) {
+  return `${date.getFullYear()}_${date.getMonth() + 1}_${date.getDate()}`;
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  // LocalStorage에서 초기값 불러오기
+  // ── LocalStorage 초기화 ──
   const [points, setPoints] = useState(() => {
     try { return parseInt(localStorage.getItem("hq_points") ?? "0", 10); }
     catch { return 0; }
   });
+
   const [completedIds, setCompletedIds] = useState(() => {
     try {
-      const saved = localStorage.getItem(getTodayKey());
+      const today = getDateStr();
+      const saved = localStorage.getItem(`hq_done_${today}`);
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-  const [selectedQuest, setSelectedQuest] = useState(null);
 
-  // 보상 시스템 상태
+  const [streak, setStreak] = useState(() => {
+    try { return parseInt(localStorage.getItem("hq_streak") ?? "0", 10); }
+    catch { return 0; }
+  });
+
+  const [selectedQuest, setSelectedQuest] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [pointToast, setPointToast] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
 
-  // 포인트 변경 시 저장
+  // ── 날짜 변경 감지 → completedIds 초기화 + streak 업데이트 ──
+  useEffect(() => {
+    try {
+      const today = getDateStr();
+      const lastVisit = localStorage.getItem("hq_last_visit");
+
+      if (lastVisit && lastVisit !== today) {
+        // 날짜가 바뀜
+        const last = new Date(lastVisit.replace(/_/g, "-"));
+        const now = new Date();
+        const diffDays = Math.round((now - last) / (1000 * 60 * 60 * 24));
+
+        // 어제 방문했으면 streak 유지/증가, 그 이상 지났으면 리셋
+        const lastCompleted = localStorage.getItem(`hq_done_${lastVisit}`);
+        const lastCompletedIds = lastCompleted ? JSON.parse(lastCompleted) : [];
+        const didCompleteYesterday = diffDays === 1 && lastCompletedIds.length > 0;
+
+        const newStreak = didCompleteYesterday ? streak + 1 : 0;
+        setStreak(newStreak);
+        localStorage.setItem("hq_streak", newStreak);
+
+        // 오늘 완료 목록 초기화
+        setCompletedIds([]);
+      }
+
+      localStorage.setItem("hq_last_visit", today);
+    } catch {}
+  }, []);
+
+  // ── 상태 변경 시 저장 ──
   useEffect(() => {
     try { localStorage.setItem("hq_points", points); } catch {}
   }, [points]);
 
-  // 완료 미션 변경 시 저장 (날짜 키 → 매일 자동 초기화)
   useEffect(() => {
-    try { localStorage.setItem(getTodayKey(), JSON.stringify(completedIds)); } catch {}
+    try {
+      const today = getDateStr();
+      localStorage.setItem(`hq_done_${today}`, JSON.stringify(completedIds));
+    } catch {}
   }, [completedIds]);
+
+  useEffect(() => {
+    try { localStorage.setItem("hq_streak", streak); } catch {}
+  }, [streak]);
 
   const handleComplete = (quest) => {
     if (completedIds.includes(quest.id)) return;
@@ -557,9 +607,16 @@ export default function App() {
     const prevLevel = getLevel(points);
     const newPoints = points + quest.points;
     const newLevel = getLevel(newPoints);
+    const newCompletedIds = [...completedIds, quest.id];
 
-    setCompletedIds((prev) => [...prev, quest.id]);
+    setCompletedIds(newCompletedIds);
     setPoints(newPoints);
+
+    // 오늘 모든 퀘스트 완료 시 streak 증가
+    if (newCompletedIds.length === QUESTS.length) {
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+    }
 
     // 폭죽 + 포인트 토스트
     setShowConfetti(true);
@@ -574,7 +631,7 @@ export default function App() {
 
   return (
     <div className="bg-gray-50 min-h-screen max-w-md mx-auto relative overflow-x-hidden">
-      <Header points={points} completed={completedIds.length} />
+      <Header points={points} completed={completedIds.length} streak={streak} />
       <QuestList completedIds={completedIds} onSelect={(q) => setSelectedQuest(q)} />
       <div className="h-20" />
 
@@ -587,17 +644,14 @@ export default function App() {
         />
       )}
 
-      {/* 폭죽 */}
       <Confetti show={showConfetti} />
 
-      {/* 포인트 토스트 */}
       <AnimatePresence>
         {pointToast && (
           <PointToast key={pointToast.points + Date.now()} points={pointToast.points} onDone={() => setPointToast(null)} />
         )}
       </AnimatePresence>
 
-      {/* 레벨업 오버레이 */}
       <AnimatePresence>
         {levelUp && (
           <LevelUpOverlay key="levelup" level={levelUp.level} onDone={() => setLevelUp(null)} />
