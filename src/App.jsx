@@ -2,13 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@supabase/supabase-js";
 
-// ─── Supabase 클라이언트 ──────────────────────────────────────────────────────
+// ---Supabase 클라이언트---
 const supabase = createClient(
   "https://qbvgpnippasdyxxjbbwt.supabase.co",
   "sb_publishable_4JKZv64CCbjKTN2ZmiHR9A_CKdPBLFd"
 );
 
-// ─── Supabase DB 헬퍼 ─────────────────────────────────────────────────────────
+// ---Supabase DB 헬퍼---
 const DB = {
   // 유저 조회 or 생성 (upsert)
   async upsertUser(tossUserKey) {
@@ -117,7 +117,7 @@ const DB = {
 };
 
 
-// ─── 앱인토스 SDK 래퍼 ────────────────────────────────────────────────────────
+// ---앱인토스 SDK 래퍼---
 // 토스 앱 내에서는 실제 SDK 동작, 일반 브라우저에서는 fallback 처리
 const TossSDK = {
   // SDK 사용 가능 여부 체크
@@ -182,7 +182,7 @@ const TossSDK = {
 };
 
 
-// ─── 타이머 안내 문구 ─────────────────────────────────────────────────────────
+// ---타이머 안내 문구---
 const TIMER_HINTS = {
   1: ["코로 천천히 들이마시고... 🌬️","4초 동안 숨을 채워요...","입으로 길게 내뱉으세요... 😮‍💨","스트레스가 빠져나가는 중..."],
   2: ["혀를 천장에 꾹 밀착! 👅","턱을 살짝 당기고 유지...","그대로! 페이스 리프팅 중...","거의 다 왔어요, 버텨요! 💪"],
@@ -192,7 +192,7 @@ const TIMER_HINTS = {
 };
 const DEFAULT_HINTS = ["집중! 거의 다 왔어요 💪","그대로 유지하세요...","아무도 모르게 건강해지는 중","10초만 버텨요! ✨"];
 
-// ─── 퀘스트 데이터 ────────────────────────────────────────────────────────────
+// ---퀘스트 데이터---
 const QUESTS = [
   { id: 1, emoji: "😮‍💨", title: "10초 한숨", desc: "몰래 스트레스 방출하기", tag: "숨쉬기", tagColor: "bg-blue-50 text-blue-500", points: 10, duration: 10, type: "timer", detail: "지금 이 순간, 눈 감고 코로 4초 들이쉬고 입으로 6초 내뱉어봐요. 아무도 몰라요. 진짜로." },
   { id: 2, emoji: "👅", title: "뮤잉 10초", desc: "혀로 하는 비밀 페이스 리프팅", tag: "얼굴", tagColor: "bg-pink-50 text-pink-500", points: 15, duration: 10, type: "timer", detail: "혀 전체를 천장에 밀착! 10초만 버티면 됩니다. 얼굴 동그래지는 거 막아준대요." },
@@ -216,7 +216,7 @@ function getLevel(pts) {
   return lv;
 }
 
-// ─── 폭죽 파티클 컴포넌트 ────────────────────────────────────────────────────
+// ---폭죽 파티클 컴포넌트---
 const CONFETTI_COLORS = ["#2563EB","#F59E0B","#10B981","#EF4444","#8B5CF6","#EC4899","#06B6D4"];
 
 function ConfettiParticle({ x, color, delay }) {
@@ -250,8 +250,8 @@ function Confetti({ show }) {
   );
 }
 
-// ─── 레벨업 오버레이 ──────────────────────────────────────────────────────────
-// ─── LeaderboardModal ─────────────────────────────────────────────────────────
+// ---레벨업 오버레이---
+// ---LeaderboardModal---
 function LeaderboardModal({ data, myKey, onClose }) {
   return (
     <motion.div
@@ -338,7 +338,7 @@ function LevelUpOverlay({ level, onDone }) {
   );
 }
 
-// ─── 포인트 획득 토스트 ───────────────────────────────────────────────────────
+// ---포인트 획득 토스트---
 function PointToast({ points, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 1800);
@@ -360,7 +360,7 @@ function PointToast({ points, onDone }) {
   );
 }
 
-// ─── useTimer 훅 ──────────────────────────────────────────────────────────────
+// ---useTimer 훅---
 function useTimer(duration) {
   const [timeLeft, setTimeLeft] = useState(duration);
   const [running, setRunning] = useState(false);
@@ -380,7 +380,7 @@ function useTimer(duration) {
   return { timeLeft, running, done, start };
 }
 
-// ─── useSensor 훅 ─────────────────────────────────────────────────────────────
+// ---useSensor 훅---
 function useSensor({ goal = 10, threshold = 1.5, cooldown = 600 }) {
   const [permission, setPermission] = useState("idle");
   const [count, setCount] = useState(0);
@@ -432,7 +432,7 @@ function useSensor({ goal = 10, threshold = 1.5, cooldown = 600 }) {
   return { permission, count, done, bump, requestPermission };
 }
 
-// ─── CircleProgress ───────────────────────────────────────────────────────────
+// ---CircleProgress---
 function CircleProgress({ progress, size = 180, strokeWidth = 10, children }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -451,7 +451,7 @@ function CircleProgress({ progress, size = 180, strokeWidth = 10, children }) {
   );
 }
 
-// ─── Header ───────────────────────────────────────────────────────────────────
+// ---Header---
 function Header({ points, completed, streak, lastVisit, onLeaderboard }) {
   const lv = getLevel(points);
   const nextLv = LEVELS.find((l) => l.min > points);
@@ -507,7 +507,7 @@ function Header({ points, completed, streak, lastVisit, onLeaderboard }) {
   );
 }
 
-// ─── QuestCard ────────────────────────────────────────────────────────────────
+// ---QuestCard---
 function QuestCard({ quest, isDone, onClick }) {
   return (
     <button onClick={onClick}
@@ -531,7 +531,7 @@ function QuestCard({ quest, isDone, onClick }) {
   );
 }
 
-// ─── QuestList ────────────────────────────────────────────────────────────────
+// ---QuestList---
 function QuestList({ completedIds, onSelect }) {
   const pending = QUESTS.filter((q) => !completedIds.includes(q.id));
   const done = QUESTS.filter((q) => completedIds.includes(q.id));
@@ -549,7 +549,7 @@ function QuestList({ completedIds, onSelect }) {
   );
 }
 
-// ─── TimerView ────────────────────────────────────────────────────────────────
+// ---TimerView---
 function TimerView({ quest, onComplete }) {
   const { timeLeft, running, done, start } = useTimer(quest.duration);
   const hints = TIMER_HINTS[quest.id] || DEFAULT_HINTS;
@@ -605,7 +605,7 @@ function TimerView({ quest, onComplete }) {
   );
 }
 
-// ─── SensorView ───────────────────────────────────────────────────────────────
+// ---SensorView---
 function SensorView({ quest, onComplete }) {
   const goal = quest.goal ?? 10;
   const { permission, count, done, bump, requestPermission } = useSensor({ goal });
@@ -695,18 +695,18 @@ function SensorView({ quest, onComplete }) {
   );
 }
 
-// ─── QuestModal ───────────────────────────────────────────────────────────────
+// ---QuestModal---
 function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   const [visible, setVisible] = useState(false);
   const [phase, setPhase] = useState("info");
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
   const handleClose = () => { setVisible(false); setTimeout(onClose, 300); };
-// ─── 날짜 문자열 헬퍼 ────────────────────────────────────────────────────────
+// ---날짜 문자열 헬퍼---
 function getDateStr(date = new Date()) {
   return `${date.getFullYear()}_${date.getMonth() + 1}_${date.getDate()}`;
 }
 
-// ─── 인트로 화면 (토스 로그인 전 서비스 소개) ─────────────────────────────────
+// ---인트로 화면 (토스 로그인 전 서비스 소개)---
 // 비게임 체크리스트 7항: "서비스 소개 없이 곧바로 로그인 유도 불가"
 function IntroScreen({ onStart }) {
   return (
@@ -787,22 +787,22 @@ function IntroScreen({ onStart }) {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ---App---
 export default function App() {
-  // ── 인트로 화면 상태 ──
+  // ---인트로 화면 상태---
   const [showIntro, setShowIntro] = useState(() => {
     // 이미 로그인한 유저는 인트로 스킵
     try { return !localStorage.getItem("hq_user_key"); }
     catch { return true; }
   });
 
-  // ── 토스 SDK + Supabase 유저 상태 ──
+  // ---토스 SDK + Supabase 유저 상태---
   const [tossUserKey, setTossUserKey] = useState(() => {
     try { return localStorage.getItem("hq_user_key") ?? null; }
     catch { return null; }
   });
 
-  // ── 로컬 상태 (Supabase fallback용) ──
+  // ---로컬 상태 (Supabase fallback용)---
   const [points, setPoints] = useState(() => {
     try { return parseInt(localStorage.getItem("hq_points") ?? "0", 10); }
     catch { return 0; }
@@ -830,12 +830,12 @@ export default function App() {
     catch { return null; }
   });
 
-  // ── 앱 진입 시 세로 방향 고정 ──
+  // ---앱 진입 시 세로 방향 고정---
   useEffect(() => {
     TossSDK.setOrientation("portrait");
   }, []);
 
-  // ── 날짜 변경 감지 ──
+  // ---날짜 변경 감지---
   useEffect(() => {
     try {
       const today = getDateStr();
@@ -856,7 +856,7 @@ export default function App() {
     } catch {}
   }, []);
 
-  // ── 로컬 저장 ──
+  // ---로컬 저장---
   useEffect(() => { try { localStorage.setItem("hq_points", points); } catch {} }, [points]);
   useEffect(() => {
     try { localStorage.setItem(`hq_done_${getDateStr()}`, JSON.stringify(completedIds)); } catch {}
@@ -907,7 +907,7 @@ export default function App() {
     }
   };
 
-  // ── 인트로 화면 표시 ──
+  // ---인트로 화면 표시---
   if (showIntro) {
     return (
       <IntroScreen onStart={async () => {
@@ -933,7 +933,7 @@ export default function App() {
     );
   }
 
-  // ── 리더보드 열기 ──
+  // ---리더보드 열기---
   const handleLeaderboard = async () => {
     const data = await DB.getLeaderboard();
     setLeaderboardData(data || []);
