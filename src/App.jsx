@@ -701,6 +701,46 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   const [phase, setPhase] = useState("info");
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
   const handleClose = () => { setVisible(false); setTimeout(onClose, 300); };
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex flex-col justify-end bg-black/40 transition-opacity duration-300 ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+    >
+      <div className={`bg-white rounded-t-3xl px-5 pt-6 pb-10 flex flex-col gap-5 transition-transform duration-300 ${visible ? "translate-y-0" : "translate-y-full"}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">{quest.emoji}</span>
+            <div>
+              <h3 className="font-bold text-gray-900">{quest.title}</h3>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${quest.tagColor}`}>{quest.tag}</span>
+            </div>
+          </div>
+          <button onClick={handleClose} className="text-gray-400 text-2xl leading-none w-8 h-8 flex items-center justify-center active:opacity-50">✕</button>
+        </div>
+        <div className="bg-gray-50 rounded-2xl p-4">
+          <p className="text-sm text-gray-600 leading-relaxed">{quest.detail}</p>
+        </div>
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm text-gray-500">획득 포인트</span>
+          <span className="text-lg font-bold text-blue-600">+{quest.points}P</span>
+        </div>
+        {isCompleted ? (
+          <div className="w-full bg-gray-100 text-gray-400 font-bold text-base py-4 rounded-2xl text-center">✅ 오늘 이미 완료했어요!</div>
+        ) : phase === "info" ? (
+          <button onClick={() => setPhase("action")} className="w-full bg-blue-600 text-white font-bold text-base py-4 rounded-2xl active:bg-blue-700 transition-colors">
+            시작하기 →
+          </button>
+        ) : quest.type === "sensor" ? (
+          <SensorView quest={quest} onComplete={() => { onComplete(quest); handleClose(); }} />
+        ) : (
+          <TimerView quest={quest} onComplete={() => { onComplete(quest); handleClose(); }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---날짜 문자열 헬퍼---
 function getDateStr(date = new Date()) {
   return `${date.getFullYear()}_${date.getMonth() + 1}_${date.getDate()}`;
