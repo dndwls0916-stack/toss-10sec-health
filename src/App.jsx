@@ -1,5 +1,121 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── Supabase 클라이언트 ──────────────────────────────────────────────────────
+const supabase = createClient(
+  "https://qbvgpnippasdyxxjbbwt.supabase.co",
+  "sb_publishable_4JKZv64CCbjKTN2ZmiHR9A_CKdPBLFd"
+);
+
+// ─── Supabase DB 헬퍼 ─────────────────────────────────────────────────────────
+const DB = {
+  // 유저 조회 or 생성 (upsert)
+  async upsertUser(tossUserKey) {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const { data, error } = await supabase
+        .from("users")
+        .upsert({ toss_user_key: tossUserKey, last_visit_date: today }, { onConflict: "toss_user_key" })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.warn("[DB] upsertUser 실패:", e);
+      return null;
+    }
+  },
+
+  // 유저 데이터 불러오기
+  async getUser(tossUserKey) {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("toss_user_key", tossUserKey)
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.warn("[DB] getUser 실패:", e);
+      return null;
+    }
+  },
+
+  // 포인트 + streak 업데이트
+  async updateUser(tossUserKey, { points, streak, lastVisitDate }) {
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ points, streak, last_visit_date: lastVisitDate })
+        .eq("toss_user_key", tossUserKey);
+      if (error) throw error;
+    } catch (e) {
+      console.warn("[DB] updateUser 실패:", e);
+    }
+  },
+
+  // 오늘 완료한 퀘스트 목록 조회
+  async getTodayCompletions(tossUserKey) {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("toss_user_key", tossUserKey)
+        .single();
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("quest_completions")
+        .select("quest_id")
+        .eq("user_id", user.id)
+        .eq("completed_date", today);
+      if (error) throw error;
+      return data.map((d) => d.quest_id);
+    } catch (e) {
+      console.warn("[DB] getTodayCompletions 실패:", e);
+      return [];
+    }
+  },
+
+  // 퀘스트 완료 기록 저장
+  async saveCompletion(tossUserKey, quest) {
+    try {
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("toss_user_key", tossUserKey)
+        .single();
+      if (!user) return;
+      const { error } = await supabase.from("quest_completions").insert({
+        user_id: user.id,
+        quest_id: quest.id,
+        quest_title: quest.title,
+        points_earned: quest.points,
+      });
+      if (error) throw error;
+    } catch (e) {
+      console.warn("[DB] saveCompletion 실패:", e);
+    }
+  },
+
+  // 랭킹 TOP 10 조회
+  async getLeaderboard() {
+    try {
+      const { data, error } = await supabase
+        .from("leaderboard")
+        .select("*")
+        .limit(10);
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.warn("[DB] getLeaderboard 실패:", e);
+      return [];
+    }
+  },
+};
+
 
 // ─── 앱인토스 SDK 래퍼 ────────────────────────────────────────────────────────
 // 토스 앱 내에서는 실제 SDK 동작, 일반 브라우저에서는 fallback 처리
@@ -537,19 +653,18 @@ function getDateStr(date = new Date()) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  // ── 토스 SDK 상태 ──
+  // ── 토스 SDK + Supabase 유저 상태 ──
   const [tossUserKey, setTossUserKey] = useState(() => {
     try { return localStorage.getItem("hq_user_key") ?? null; }
     catch { return null; }
   });
   const [sdkReady, setSdkReady] = useState(false);
 
-  // ── LocalStorage 초기화 ──
+  // ── 로컬 상태 (Supabase fallback용) ──
   const [points, setPoints] = useState(() => {
     try { return parseInt(localStorage.getItem("hq_points") ?? "0", 10); }
     catch { return 0; }
   });
-
   const [completedIds, setCompletedIds] = useState(() => {
     try {
       const today = getDateStr();
@@ -557,7 +672,6 @@ export default function App() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
-
   const [streak, setStreak] = useState(() => {
     try { return parseInt(localStorage.getItem("hq_streak") ?? "0", 10); }
     catch { return 0; }
@@ -568,39 +682,48 @@ export default function App() {
   const [pointToast, setPointToast] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
 
-  // ── 앱인토스 SDK 초기화 ──
+  // ── 앱인토스 SDK 초기화 + Supabase 유저 동기화 ──
   useEffect(() => {
-    const initSDK = async () => {
+    const initApp = async () => {
       // 1. 세로 방향 고정
       await TossSDK.setOrientation("portrait");
 
       // 2. 토스 로그인 + 유저키 획득
-      const { authorizationCode, referrer } = await TossSDK.appLogin();
+      await TossSDK.appLogin();
       const userKey = await TossSDK.getUserKey();
 
       if (userKey) {
         setTossUserKey(userKey);
         try { localStorage.setItem("hq_user_key", userKey); } catch {}
+
+        // 3. Supabase에서 유저 데이터 불러오기
+        const dbUser = await DB.getUser(userKey);
+        if (dbUser) {
+          // DB 데이터로 상태 동기화
+          setPoints(dbUser.points);
+          setStreak(dbUser.streak);
+          // 오늘 완료한 퀘스트 동기화
+          const todayCompletions = await DB.getTodayCompletions(userKey);
+          setCompletedIds(todayCompletions);
+        } else {
+          // 신규 유저 → DB에 생성
+          await DB.upsertUser(userKey);
+        }
       }
 
-      // 3. 앱 진입 이벤트 트래킹
-      await TossSDK.trackEvent("health_quest_open", {
-        referrer,
-        hasUserKey: !!userKey,
-      });
-
+      // 4. 앱 진입 이벤트 트래킹
+      await TossSDK.trackEvent("health_quest_open", { hasUserKey: !!userKey });
       setSdkReady(true);
     };
 
-    initSDK();
+    initApp();
   }, []);
 
-  // ── 날짜 변경 감지 → completedIds 초기화 + streak 업데이트 ──
+  // ── 날짜 변경 감지 ──
   useEffect(() => {
     try {
       const today = getDateStr();
       const lastVisit = localStorage.getItem("hq_last_visit");
-
       if (lastVisit && lastVisit !== today) {
         const last = new Date(lastVisit.replace(/_/g, "-"));
         const now = new Date();
@@ -610,28 +733,18 @@ export default function App() {
         const didCompleteYesterday = diffDays === 1 && lastCompletedIds.length > 0;
         const newStreak = didCompleteYesterday ? streak + 1 : 0;
         setStreak(newStreak);
-        localStorage.setItem("hq_streak", newStreak);
         setCompletedIds([]);
       }
       localStorage.setItem("hq_last_visit", today);
     } catch {}
   }, []);
 
-  // ── 상태 변경 시 저장 ──
+  // ── 로컬 저장 ──
+  useEffect(() => { try { localStorage.setItem("hq_points", points); } catch {} }, [points]);
   useEffect(() => {
-    try { localStorage.setItem("hq_points", points); } catch {}
-  }, [points]);
-
-  useEffect(() => {
-    try {
-      const today = getDateStr();
-      localStorage.setItem(`hq_done_${today}`, JSON.stringify(completedIds));
-    } catch {}
+    try { localStorage.setItem(`hq_done_${getDateStr()}`, JSON.stringify(completedIds)); } catch {}
   }, [completedIds]);
-
-  useEffect(() => {
-    try { localStorage.setItem("hq_streak", streak); } catch {}
-  }, [streak]);
+  useEffect(() => { try { localStorage.setItem("hq_streak", streak); } catch {} }, [streak]);
 
   const handleComplete = async (quest) => {
     if (completedIds.includes(quest.id)) return;
@@ -640,11 +753,24 @@ export default function App() {
     const newPoints = points + quest.points;
     const newLevel = getLevel(newPoints);
     const newCompletedIds = [...completedIds, quest.id];
+    const today = new Date().toISOString().split("T")[0];
 
     setCompletedIds(newCompletedIds);
     setPoints(newPoints);
 
-    // 퀘스트 완료 이벤트 트래킹
+    // Supabase 저장
+    if (tossUserKey) {
+      const newStreak = newCompletedIds.length === QUESTS.length ? streak + 1 : streak;
+      await DB.saveCompletion(tossUserKey, quest);
+      await DB.updateUser(tossUserKey, {
+        points: newPoints,
+        streak: newStreak,
+        lastVisitDate: today,
+      });
+      if (newCompletedIds.length === QUESTS.length) setStreak(newStreak);
+    }
+
+    // 이벤트 트래킹
     await TossSDK.trackEvent("quest_complete", {
       questId: quest.id,
       questTitle: quest.title,
@@ -652,27 +778,14 @@ export default function App() {
       totalPoints: newPoints,
     });
 
-    // 오늘 모든 퀘스트 완료 시 streak 증가 + 트래킹
-    if (newCompletedIds.length === QUESTS.length) {
-      const newStreak = streak + 1;
-      setStreak(newStreak);
-      await TossSDK.trackEvent("all_quests_complete", {
-        streak: newStreak,
-        totalPoints: newPoints,
-      });
-    }
-
     // 폭죽 + 포인트 토스트
     setShowConfetti(true);
     setPointToast({ points: quest.points });
     setTimeout(() => setShowConfetti(false), 2500);
 
-    // 레벨업 감지 + 트래킹
+    // 레벨업 감지
     if (newLevel.min !== prevLevel.min) {
-      await TossSDK.trackEvent("level_up", {
-        newLevel: newLevel.label,
-        totalPoints: newPoints,
-      });
+      await TossSDK.trackEvent("level_up", { newLevel: newLevel.label });
       setTimeout(() => setLevelUp({ level: newLevel }), 600);
     }
   };
