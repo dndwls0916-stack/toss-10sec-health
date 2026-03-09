@@ -1,6 +1,71 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+// ─── 앱인토스 SDK 래퍼 ────────────────────────────────────────────────────────
+// 토스 앱 내에서는 실제 SDK 동작, 일반 브라우저에서는 fallback 처리
+const TossSDK = {
+  // SDK 사용 가능 여부 체크
+  isAvailable() {
+    return typeof window !== "undefined" && window.__APPS_IN_TOSS__ != null;
+  },
+
+  // 토스 로그인 → authorizationCode + referrer 반환
+  async appLogin() {
+    try {
+      if (!this.isAvailable()) {
+        console.log("[TossSDK] 브라우저 환경 — appLogin fallback");
+        return { authorizationCode: null, referrer: "browser" };
+      }
+      const { appLogin } = await import("@apps-in-toss/web-framework");
+      return await appLogin();
+    } catch (e) {
+      console.warn("[TossSDK] appLogin 실패:", e);
+      return { authorizationCode: null, referrer: "error" };
+    }
+  },
+
+  // 게임용 유저 고유 키 획득
+  async getUserKey() {
+    try {
+      if (!this.isAvailable()) {
+        console.log("[TossSDK] 브라우저 환경 — getUserKey fallback");
+        return null;
+      }
+      const { getUserKeyForGame } = await import("@apps-in-toss/web-framework");
+      return await getUserKeyForGame();
+    } catch (e) {
+      console.warn("[TossSDK] getUserKey 실패:", e);
+      return null;
+    }
+  },
+
+  // 화면 방향 고정 (portrait = 세로)
+  async setOrientation(orientation = "portrait") {
+    try {
+      if (!this.isAvailable()) return;
+      const { setDeviceOrientation } = await import("@apps-in-toss/web-framework");
+      await setDeviceOrientation(orientation);
+    } catch (e) {
+      console.warn("[TossSDK] setOrientation 실패:", e);
+    }
+  },
+
+  // 이벤트 트래킹
+  async trackEvent(eventName, params = {}) {
+    try {
+      if (!this.isAvailable()) {
+        console.log(`[TossSDK] Analytics fallback — ${eventName}`, params);
+        return;
+      }
+      const { Analytics } = await import("@apps-in-toss/web-framework");
+      Analytics.track(eventName, params);
+    } catch (e) {
+      console.warn("[TossSDK] trackEvent 실패:", e);
+    }
+  },
+};
+
+
 // ─── 타이머 안내 문구 ─────────────────────────────────────────────────────────
 const TIMER_HINTS = {
   1: ["코로 천천히 들이마시고... 🌬️","4초 동안 숨을 채워요...","입으로 길게 내뱉으세요... 😮‍💨","스트레스가 빠져나가는 중..."],
@@ -465,66 +530,6 @@ function QuestModal({ quest, onClose, onComplete, isCompleted }) {
   const [phase, setPhase] = useState("info");
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
   const handleClose = () => { setVisible(false); setTimeout(onClose, 300); };
-  const handleComplete = () => { onComplete(quest); handleClose(); };
-  if (!quest) return null;
-  const startPhase = quest.type === "timer" ? "timer" : "sensor";
-  return (
-    <>
-      <div className="fixed inset-0 bg-black z-40 transition-opacity duration-300"
-        style={{ opacity: visible ? 0.4 : 0 }} onClick={handleClose} />
-      <div className="fixed bottom-0 left-1/2 w-full max-w-md bg-white rounded-t-3xl z-50 transition-transform duration-300 ease-out"
-        style={{ transform: `translateX(-50%) translateY(${visible ? "0%" : "100%"})` }}>
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-gray-200 rounded-full" />
-        </div>
-        <div className="px-6 pt-3 pb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl">{quest.emoji}</div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-gray-900">{quest.title}</h2>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${quest.tagColor}`}>{quest.tag}</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-0.5">{quest.desc}</p>
-            </div>
-          </div>
-          <AnimatePresence mode="wait">
-            {phase === "info" && (
-              <motion.div key="info" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
-                <div className="bg-gray-50 rounded-2xl p-4 mb-4">
-                  <p className="text-sm text-gray-700 leading-relaxed">{quest.detail}</p>
-                </div>
-                <div className="flex items-center justify-between bg-blue-50 rounded-2xl px-4 py-3 mb-5">
-                  <span className="text-sm font-medium text-gray-600">완료 시 보상</span>
-                  <span className="text-lg font-bold text-blue-600">+{quest.points}P</span>
-                </div>
-                {isCompleted ? (
-                  <div className="w-full bg-gray-100 text-gray-400 font-bold text-base py-4 rounded-2xl text-center">✅ 오늘은 이미 완료했어요</div>
-                ) : (
-                  <button onClick={() => setPhase(startPhase)}
-                    className="w-full bg-blue-600 text-white font-bold text-base py-4 rounded-2xl active:bg-blue-700 transition-colors">
-                    지금 바로 시작하기 →
-                  </button>
-                )}
-              </motion.div>
-            )}
-            {phase === "timer" && (
-              <motion.div key="timer" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
-                <TimerView quest={quest} onComplete={handleComplete} />
-              </motion.div>
-            )}
-            {phase === "sensor" && (
-              <motion.div key="sensor" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
-                <SensorView quest={quest} onComplete={handleComplete} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ─── 날짜 문자열 헬퍼 ────────────────────────────────────────────────────────
 function getDateStr(date = new Date()) {
   return `${date.getFullYear()}_${date.getMonth() + 1}_${date.getDate()}`;
@@ -532,6 +537,13 @@ function getDateStr(date = new Date()) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  // ── 토스 SDK 상태 ──
+  const [tossUserKey, setTossUserKey] = useState(() => {
+    try { return localStorage.getItem("hq_user_key") ?? null; }
+    catch { return null; }
+  });
+  const [sdkReady, setSdkReady] = useState(false);
+
   // ── LocalStorage 초기화 ──
   const [points, setPoints] = useState(() => {
     try { return parseInt(localStorage.getItem("hq_points") ?? "0", 10); }
@@ -556,6 +568,33 @@ export default function App() {
   const [pointToast, setPointToast] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
 
+  // ── 앱인토스 SDK 초기화 ──
+  useEffect(() => {
+    const initSDK = async () => {
+      // 1. 세로 방향 고정
+      await TossSDK.setOrientation("portrait");
+
+      // 2. 토스 로그인 + 유저키 획득
+      const { authorizationCode, referrer } = await TossSDK.appLogin();
+      const userKey = await TossSDK.getUserKey();
+
+      if (userKey) {
+        setTossUserKey(userKey);
+        try { localStorage.setItem("hq_user_key", userKey); } catch {}
+      }
+
+      // 3. 앱 진입 이벤트 트래킹
+      await TossSDK.trackEvent("health_quest_open", {
+        referrer,
+        hasUserKey: !!userKey,
+      });
+
+      setSdkReady(true);
+    };
+
+    initSDK();
+  }, []);
+
   // ── 날짜 변경 감지 → completedIds 초기화 + streak 업데이트 ──
   useEffect(() => {
     try {
@@ -563,24 +602,17 @@ export default function App() {
       const lastVisit = localStorage.getItem("hq_last_visit");
 
       if (lastVisit && lastVisit !== today) {
-        // 날짜가 바뀜
         const last = new Date(lastVisit.replace(/_/g, "-"));
         const now = new Date();
         const diffDays = Math.round((now - last) / (1000 * 60 * 60 * 24));
-
-        // 어제 방문했으면 streak 유지/증가, 그 이상 지났으면 리셋
         const lastCompleted = localStorage.getItem(`hq_done_${lastVisit}`);
         const lastCompletedIds = lastCompleted ? JSON.parse(lastCompleted) : [];
         const didCompleteYesterday = diffDays === 1 && lastCompletedIds.length > 0;
-
         const newStreak = didCompleteYesterday ? streak + 1 : 0;
         setStreak(newStreak);
         localStorage.setItem("hq_streak", newStreak);
-
-        // 오늘 완료 목록 초기화
         setCompletedIds([]);
       }
-
       localStorage.setItem("hq_last_visit", today);
     } catch {}
   }, []);
@@ -601,7 +633,7 @@ export default function App() {
     try { localStorage.setItem("hq_streak", streak); } catch {}
   }, [streak]);
 
-  const handleComplete = (quest) => {
+  const handleComplete = async (quest) => {
     if (completedIds.includes(quest.id)) return;
 
     const prevLevel = getLevel(points);
@@ -612,10 +644,22 @@ export default function App() {
     setCompletedIds(newCompletedIds);
     setPoints(newPoints);
 
-    // 오늘 모든 퀘스트 완료 시 streak 증가
+    // 퀘스트 완료 이벤트 트래킹
+    await TossSDK.trackEvent("quest_complete", {
+      questId: quest.id,
+      questTitle: quest.title,
+      points: quest.points,
+      totalPoints: newPoints,
+    });
+
+    // 오늘 모든 퀘스트 완료 시 streak 증가 + 트래킹
     if (newCompletedIds.length === QUESTS.length) {
       const newStreak = streak + 1;
       setStreak(newStreak);
+      await TossSDK.trackEvent("all_quests_complete", {
+        streak: newStreak,
+        totalPoints: newPoints,
+      });
     }
 
     // 폭죽 + 포인트 토스트
@@ -623,8 +667,12 @@ export default function App() {
     setPointToast({ points: quest.points });
     setTimeout(() => setShowConfetti(false), 2500);
 
-    // 레벨업 감지
+    // 레벨업 감지 + 트래킹
     if (newLevel.min !== prevLevel.min) {
+      await TossSDK.trackEvent("level_up", {
+        newLevel: newLevel.label,
+        totalPoints: newPoints,
+      });
       setTimeout(() => setLevelUp({ level: newLevel }), 600);
     }
   };
