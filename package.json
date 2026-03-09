@@ -10,7 +10,6 @@
     "vercel-build": "vite build"
   },
   "dependencies": {
-    "@apps-in-toss/web-framework": "latest",
     "@supabase/supabase-js": "^2.39.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
