@@ -651,14 +651,101 @@ function getDateStr(date = new Date()) {
   return `${date.getFullYear()}_${date.getMonth() + 1}_${date.getDate()}`;
 }
 
+// ─── 인트로 화면 (토스 로그인 전 서비스 소개) ─────────────────────────────────
+// 비게임 체크리스트 7항: "서비스 소개 없이 곧바로 로그인 유도 불가"
+function IntroScreen({ onStart }) {
+  return (
+    <div className="bg-white min-h-screen max-w-md mx-auto flex flex-col">
+      {/* 상단 영역 */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8 pt-16 pb-8">
+        {/* 앱 아이콘 */}
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 18 }}
+          className="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center mb-8 shadow-lg"
+        >
+          <span className="text-4xl">⚡</span>
+        </motion.div>
+
+        {/* 앱 이름 */}
+        <motion.h1
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="text-3xl font-bold text-gray-900 mb-3 text-center"
+        >
+          10초 건강컷
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="text-gray-500 text-center text-base leading-relaxed mb-12"
+        >
+          헬스장 없이, 기구 없이<br />
+          일상 속 10초로 건강해지는 습관
+        </motion.p>
+
+        {/* 서비스 특징 3가지 */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="w-full space-y-4 mb-12"
+        >
+          {[
+            { icon: "🎯", title: "매일 6가지 퀘스트", desc: "10초면 끝나는 건강 미션" },
+            { icon: "⭐", title: "포인트 & 레벨업", desc: "완료할수록 쌓이는 보상" },
+            { icon: "🔥", title: "연속 달성 스트릭", desc: "꾸준함이 만드는 건강 습관" },
+          ].map((f, i) => (
+            <div key={i} className="flex items-center gap-4 bg-gray-50 rounded-2xl p-4">
+              <span className="text-2xl">{f.icon}</span>
+              <div>
+                <div className="font-semibold text-gray-900 text-sm">{f.title}</div>
+                <div className="text-gray-500 text-xs mt-0.5">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* 하단 CTA */}
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.45 }}
+        className="px-6 pb-10"
+      >
+        <button
+          onClick={onStart}
+          className="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-2xl active:scale-95 transition-transform"
+        >
+          토스로 시작하기
+        </button>
+        <p className="text-center text-gray-400 text-xs mt-4">
+          시작하면 서비스 이용약관 및 개인정보처리방침에 동의하게 됩니다
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  // ── 인트로 화면 상태 ──
+  const [showIntro, setShowIntro] = useState(() => {
+    // 이미 로그인한 유저는 인트로 스킵
+    try { return !localStorage.getItem("hq_user_key"); }
+    catch { return true; }
+  });
+
   // ── 토스 SDK + Supabase 유저 상태 ──
   const [tossUserKey, setTossUserKey] = useState(() => {
     try { return localStorage.getItem("hq_user_key") ?? null; }
     catch { return null; }
   });
-  const [sdkReady, setSdkReady] = useState(false);
 
   // ── 로컬 상태 (Supabase fallback용) ──
   const [points, setPoints] = useState(() => {
@@ -682,41 +769,9 @@ export default function App() {
   const [pointToast, setPointToast] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
 
-  // ── 앱인토스 SDK 초기화 + Supabase 유저 동기화 ──
+  // ── 앱 진입 시 세로 방향 고정 ──
   useEffect(() => {
-    const initApp = async () => {
-      // 1. 세로 방향 고정
-      await TossSDK.setOrientation("portrait");
-
-      // 2. 토스 로그인 + 유저키 획득
-      await TossSDK.appLogin();
-      const userKey = await TossSDK.getUserKey();
-
-      if (userKey) {
-        setTossUserKey(userKey);
-        try { localStorage.setItem("hq_user_key", userKey); } catch {}
-
-        // 3. Supabase에서 유저 데이터 불러오기
-        const dbUser = await DB.getUser(userKey);
-        if (dbUser) {
-          // DB 데이터로 상태 동기화
-          setPoints(dbUser.points);
-          setStreak(dbUser.streak);
-          // 오늘 완료한 퀘스트 동기화
-          const todayCompletions = await DB.getTodayCompletions(userKey);
-          setCompletedIds(todayCompletions);
-        } else {
-          // 신규 유저 → DB에 생성
-          await DB.upsertUser(userKey);
-        }
-      }
-
-      // 4. 앱 진입 이벤트 트래킹
-      await TossSDK.trackEvent("health_quest_open", { hasUserKey: !!userKey });
-      setSdkReady(true);
-    };
-
-    initApp();
+    TossSDK.setOrientation("portrait");
   }, []);
 
   // ── 날짜 변경 감지 ──
@@ -789,6 +844,32 @@ export default function App() {
       setTimeout(() => setLevelUp({ level: newLevel }), 600);
     }
   };
+
+  // ── 인트로 화면 표시 ──
+  if (showIntro) {
+    return (
+      <IntroScreen onStart={async () => {
+        setShowIntro(false);
+        // 토스 로그인 시작
+        await TossSDK.appLogin();
+        const userKey = await TossSDK.getUserKey();
+        if (userKey) {
+          setTossUserKey(userKey);
+          try { localStorage.setItem("hq_user_key", userKey); } catch {}
+          const dbUser = await DB.getUser(userKey);
+          if (dbUser) {
+            setPoints(dbUser.points);
+            setStreak(dbUser.streak);
+            const todayCompletions = await DB.getTodayCompletions(userKey);
+            setCompletedIds(todayCompletions);
+          } else {
+            await DB.upsertUser(userKey);
+          }
+        }
+        await TossSDK.trackEvent("health_quest_open", { hasUserKey: !!userKey });
+      }} />
+    );
+  }
 
   return (
     <div className="bg-gray-50 min-h-screen max-w-md mx-auto relative overflow-x-hidden">
