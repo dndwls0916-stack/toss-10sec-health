@@ -251,6 +251,57 @@ function Confetti({ show }) {
 }
 
 // ─── 레벨업 오버레이 ──────────────────────────────────────────────────────────
+// ─── LeaderboardModal ─────────────────────────────────────────────────────────
+function LeaderboardModal({ data, myKey, onClose }) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex flex-col bg-white max-w-md mx-auto"
+      initial={{ y: "100%" }}
+      animate={{ y: 0 }}
+      exit={{ y: "100%" }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+    >
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-5 pt-14 pb-4 border-b border-gray-100">
+        <h2 className="text-lg font-bold text-gray-900">🏆 포인트 랭킹</h2>
+        <button onClick={onClose} className="text-gray-400 text-2xl leading-none active:opacity-50">✕</button>
+      </div>
+
+      {/* 리스트 */}
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        {data.length === 0 ? (
+          <div className="text-center text-gray-400 py-20">
+            <p className="text-4xl mb-3">🌱</p>
+            <p className="text-sm">아직 데이터가 없어요<br />퀘스트를 완료하면 여기에 표시돼요!</p>
+          </div>
+        ) : data.map((row, i) => {
+          const isMe = row.toss_user_key === myKey;
+          const medals = ["🥇", "🥈", "🥉"];
+          const rankIcon = i < 3 ? medals[i] : `${i + 1}위`;
+          return (
+            <motion.div
+              key={row.toss_user_key}
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className={`flex items-center gap-3 p-4 rounded-2xl ${isMe ? "bg-blue-50 border-2 border-blue-200" : "bg-gray-50"}`}
+            >
+              <span className="text-xl w-8 text-center">{rankIcon}</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  {isMe ? "나 👈" : `유저 ${String(row.toss_user_key).slice(-4)}`}
+                </p>
+                <p className="text-xs text-gray-400">🔥 {row.streak || 0}일 연속</p>
+              </div>
+              <span className="text-blue-600 font-bold text-sm">{(row.points || 0).toLocaleString()}P</span>
+            </motion.div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
 function LevelUpOverlay({ level, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 2500);
@@ -401,11 +452,14 @@ function CircleProgress({ progress, size = 180, strokeWidth = 10, children }) {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({ points, completed, streak }) {
+function Header({ points, completed, streak, lastVisit, onLeaderboard }) {
   const lv = getLevel(points);
   const nextLv = LEVELS.find((l) => l.min > points);
   const curMin = getLevel(points).min;
   const progress = nextLv ? ((points - curMin) / (nextLv.min - curMin)) * 100 : 100;
+  const lastVisitText = lastVisit
+    ? lastVisit === getDateStr() ? "오늘 방문" : `마지막 방문: ${lastVisit.replace(/_/g, ".")}`
+    : "첫 방문 🎉";
   return (
     <div className="bg-white px-5 pt-12 pb-5 shadow-sm">
       <div className="flex items-center justify-between mb-4">
@@ -417,8 +471,10 @@ function Header({ points, completed, streak }) {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-400 mb-0.5">모은 포인트</p>
-          <p className="text-2xl font-bold text-blue-600">{points.toLocaleString()}P</p>
+          <button onClick={onLeaderboard} className="flex flex-col items-end active:opacity-70">
+            <p className="text-xs text-gray-400 mb-0.5">모은 포인트</p>
+            <p className="text-2xl font-bold text-blue-600">{points.toLocaleString()}P</p>
+          </button>
         </div>
       </div>
       <div className="mb-2">
@@ -434,20 +490,19 @@ function Header({ points, completed, streak }) {
         <div className="bg-blue-50 text-blue-600 text-xs font-semibold px-2.5 py-1 rounded-full">
           오늘 {completed}/{QUESTS.length} 완료
         </div>
-        {streak > 0 && (
-          <motion.div
-            className="bg-orange-50 text-orange-500 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 300 }}
-          >
-            🔥 {streak}일째 건강 중
-          </motion.div>
-        )}
+        <motion.div
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1 ${streak > 0 ? "bg-orange-50 text-orange-500" : "bg-gray-100 text-gray-400"}`}
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          🔥 {streak > 0 ? `${streak}일째 건강 중` : "오늘부터 시작!"}
+        </motion.div>
         {completed === QUESTS.length && (
           <div className="bg-yellow-50 text-yellow-600 text-xs font-semibold px-2.5 py-1 rounded-full animate-pulse">🎊 모두 완료!</div>
         )}
       </div>
+      <p className="text-xs text-gray-300 mt-2">{lastVisitText}</p>
     </div>
   );
 }
@@ -768,6 +823,12 @@ export default function App() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [pointToast, setPointToast] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState([]);
+  const [lastVisit, setLastVisit] = useState(() => {
+    try { return localStorage.getItem("hq_last_visit") ?? null; }
+    catch { return null; }
+  });
 
   // ── 앱 진입 시 세로 방향 고정 ──
   useEffect(() => {
@@ -778,12 +839,12 @@ export default function App() {
   useEffect(() => {
     try {
       const today = getDateStr();
-      const lastVisit = localStorage.getItem("hq_last_visit");
-      if (lastVisit && lastVisit !== today) {
-        const last = new Date(lastVisit.replace(/_/g, "-"));
+      const storedLastVisit = localStorage.getItem("hq_last_visit");
+      if (storedLastVisit && storedLastVisit !== today) {
+        const last = new Date(storedLastVisit.replace(/_/g, "-"));
         const now = new Date();
         const diffDays = Math.round((now - last) / (1000 * 60 * 60 * 24));
-        const lastCompleted = localStorage.getItem(`hq_done_${lastVisit}`);
+        const lastCompleted = localStorage.getItem(`hq_done_${storedLastVisit}`);
         const lastCompletedIds = lastCompleted ? JSON.parse(lastCompleted) : [];
         const didCompleteYesterday = diffDays === 1 && lastCompletedIds.length > 0;
         const newStreak = didCompleteYesterday ? streak + 1 : 0;
@@ -791,6 +852,7 @@ export default function App() {
         setCompletedIds([]);
       }
       localStorage.setItem("hq_last_visit", today);
+      setLastVisit(today);
     } catch {}
   }, []);
 
@@ -871,9 +933,22 @@ export default function App() {
     );
   }
 
+  // ── 리더보드 열기 ──
+  const handleLeaderboard = async () => {
+    const data = await DB.getLeaderboard();
+    setLeaderboardData(data || []);
+    setShowLeaderboard(true);
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen max-w-md mx-auto relative overflow-x-hidden">
-      <Header points={points} completed={completedIds.length} streak={streak} />
+      <Header
+        points={points}
+        completed={completedIds.length}
+        streak={streak}
+        lastVisit={lastVisit}
+        onLeaderboard={handleLeaderboard}
+      />
       <QuestList completedIds={completedIds} onSelect={(q) => setSelectedQuest(q)} />
       <div className="h-20" />
 
@@ -885,6 +960,16 @@ export default function App() {
           onComplete={handleComplete}
         />
       )}
+
+      <AnimatePresence>
+        {showLeaderboard && (
+          <LeaderboardModal
+            data={leaderboardData}
+            myKey={tossUserKey}
+            onClose={() => setShowLeaderboard(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <Confetti show={showConfetti} />
 
